@@ -1,8 +1,7 @@
 mod generator;
 
-use std::{io::Write, path::PathBuf, process::Command};
-
-use rpassword::read_password;
+use generator::generate_password;
+use std::{io::Write, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 
 fn print_usage(program: &str) {
     print!(
@@ -23,8 +22,10 @@ fn print_usage(program: &str) {
 
 // Is there smth like Doxygen for rust?
 fn init_store(store_path: &PathBuf, id: &str) -> Result<(), std::io::Error> {
+    let perm = std::fs::Permissions::from_mode(0o077);
     // Create the directory if it doesn't exist
     std::fs::create_dir_all(&store_path)?;
+    std::fs::set_permissions(store_path, perm)?;
 
     // Create the full path for the .gpg-id file
     let mut file_path = store_path.clone();
@@ -70,6 +71,14 @@ fn list_entries(store_path: &PathBuf) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn get_input(prompt: &str) -> Result<String, std::io::Error> {
+    let mut input = String::new();
+    print!("{}", prompt);
+    std::io::stdout().flush()?;
+    std::io::stdin().read_line(&mut input)?;
+    Ok(input.trim().to_string())
+}
+
 fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
     // Get the recipient
     let mut gpg_id_file = store_path.clone();
@@ -81,22 +90,56 @@ fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
     output_file.push(name);
     output_file.set_extension("gpg");
 
-    print!("Enter the password: ");
-    let _ = std::io::stdout().flush();
-    let password1 = read_password()?;
-    print!("Re-enter the password: ");
-    let _ = std::io::stdout().flush();
-    let password2 = read_password()?;
-
-    if password1 != password2 {
-        eprintln!("Passwords don't match.");
+    if output_file.exists() {
+        eprintln!("Pass already exists.");
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            "Passwords don't match",
+            "Pass already exists",
         ));
     }
 
-    drop(password1);
+    let mut choice = String::new();
+    print!("Generate a random password? [y/n] ");
+    std::io::stdout().flush()?;
+    std::io::stdin().read_line(&mut choice)?;
+
+    let random = match choice.trim().to_lowercase().as_str() {
+        "y" => true,
+        _ => false,
+    };
+
+    let mut password;
+
+    if !random {
+        let mut password_again;
+        loop {
+            print!("Enter the password: ");
+            let _ = std::io::stdout().flush();
+            password = rpassword::read_password()?;
+            print!("Re-enter the password: ");
+            let _ = std::io::stdout().flush();
+            password_again = rpassword::read_password()?;
+            if password != password_again {
+                eprintln!("Passwords don't match.");
+            } else {
+                drop(password_again);
+                break;
+            }
+        }
+    } else {
+        let len_input = get_input("Choose a length: ")?;
+        let len: usize = len_input
+            .parse()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid length"))?;
+
+        let special_input = get_input("Do you want special characters? [Y/n] ")?;
+        let special = match special_input.to_lowercase().as_str() {
+            "y" => true,
+            _ => false,
+        };
+
+        password = generate_password(len, special);
+    }
 
     // Spawn a GPG process that encrypts the stdin and prints in the target file
     let mut gpg_child_ps = Command::new("gpg")
@@ -112,7 +155,7 @@ fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
     // GPG process is created now it waits for input
     // So we take ownership of the process and pipe in the password
     if let Some(mut stdin) = gpg_child_ps.stdin.take() {
-        stdin.write_all(password2.as_bytes())?;
+        stdin.write_all(password.as_bytes())?;
     }
 
     // We wait (sync) till GPG outputs everything
@@ -169,10 +212,10 @@ fn delete_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> 
 fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = std::env::args().collect();
 
-    let curr_dir: PathBuf = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(_) => {
-            eprintln!("Failed to get current directory.");
+    let curr_dir: PathBuf = match dirs::home_dir() {
+        Some(dir) => dir,
+        None => {
+            eprintln!("No $HOME directory set. WTF!");
             std::process::exit(1);
         }
     };
@@ -211,10 +254,7 @@ fn main() -> Result<(), std::io::Error> {
                 }
                 "get" => {
                     if !store_path.exists() {
-                        eprintln!(
-                            "There is no store in the current directory.\
-                            Use -h or --help"
-                        );
+                        eprintln!("There is no store. Use -h or --help");
                     } else {
                         // don't know what to do with this
                         let _res = match get_entry(&store_path, &args[2]) {
@@ -225,10 +265,7 @@ fn main() -> Result<(), std::io::Error> {
                 }
                 "add" => {
                     if !store_path.exists() {
-                        eprintln!(
-                            "There is no store in the current directory.\
-                            Use -h or --help"
-                        );
+                        eprintln!("There is no store. Use -h or --help");
                     } else {
                         let _ = add_entry(&store_path, &args[2]);
                     }

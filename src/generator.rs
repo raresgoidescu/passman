@@ -1,6 +1,6 @@
 use rand::Rng;
 
-pub fn _generate_password(length: usize, special_chars: bool) -> String {
+pub fn generate_password(length: usize, special_chars: bool) -> String {
     const BASE_CHARSET: &str = "QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890";
     const SPECIAL_CHARSET: &str = "!@#$%^&*";
 

@@ -14,3 +14,11 @@ THINGS TO RESEARCH
 
 - mlock
 
+TODO
+----
+
+- add clipboard features
+- add option for random generated passwords
+- add support for multiple recipients
+- 
+
