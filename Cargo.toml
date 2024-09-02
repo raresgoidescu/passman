@@ -2,6 +2,8 @@
 name = "passucks"
 version = "0.1.0"
 edition = "2021"
+authors = ["Rares Goidescu <rares.goidescu@protonmail.com"]
+license = "MIT"
 
 [dependencies]
 rand = "0.8.x"
