@@ -57,6 +57,16 @@ fn list_entries(store_path: &PathBuf) -> Result<(), std::io::Error> {
         }
     }
 
+    println!("============== I don't feel like I need a loop ================");
+
+    let ls_out = Command::new("ls").arg(store_path).output()?;
+
+    if ls_out.status.success() {
+        println!("{}", String::from_utf8_lossy(&ls_out.stdout));
+    } else {
+        println!("ayaye");
+    }
+
     Ok(())
 }
 
@@ -117,34 +127,31 @@ fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
 }
 
 fn get_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
-    if !store_path.exists() || !store_path.is_dir() {
-        eprintln!("Couldn't find a store in the current directory.");
-        std::process::exit(1);
+    let mut target_entry = store_path.clone();
+    target_entry.push(name);
+    target_entry.set_extension("gpg");
+
+    // Check existance of target file
+    if !target_entry.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Entry doesn't exist",
+        ));
     }
 
-    let mut found_entry: bool = false;
+    // Use GPG to decrypt the file
+    let gpg_child_out = Command::new("gpg")
+        .arg("--decrypt")
+        .arg(target_entry)
+        .output()?;
 
-    // Loop through the files
-    for entry in std::fs::read_dir(store_path)? {
-        let entry = entry?; // I feel like this is a quick and dirty workaround
-
-        if entry.path().is_file() {
-            if let Some(current_name) = entry.path().file_stem() {
-                if current_name == name {
-                    println!("Found {}", current_name.to_string_lossy());
-                    // open > decrypt > show / copy to clipboard
-                    found_entry = true;
-                    break;
-                }
-            }
-        }
+    // Check success
+    if gpg_child_out.status.success() {
+        println!("{}", String::from_utf8_lossy(&gpg_child_out.stdout));
+        return Ok(());
+    } else {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "GPG failed"));
     }
-
-    if found_entry == false {
-        eprintln!("Couldn't find {} in the store.", name);
-    }
-
-    Ok(())
 }
 
 fn _update_entry(_name: &str) {}
@@ -203,7 +210,18 @@ fn main() -> Result<(), std::io::Error> {
                     let _ = delete_entry(&store_path, &args[2]);
                 }
                 "get" => {
-                    let _ = get_entry(&store_path, &args[2]);
+                    if !store_path.exists() {
+                        eprintln!(
+                            "There is no store in the current directory.\
+                            Use -h or --help"
+                        );
+                    } else {
+                        // don't know what to do with this
+                        let _res = match get_entry(&store_path, &args[2]) {
+                            Ok(()) => "gg".to_string(),
+                            Err(err) => err.to_string(),
+                        };
+                    }
                 }
                 "add" => {
                     if !store_path.exists() {

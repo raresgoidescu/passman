@@ -1,5 +1,8 @@
 # Passucks v0.0
 
+## Dependencies
+- gpg
+
 ## Features
 
 - Stores: name_of_password, password
