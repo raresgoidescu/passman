@@ -1,18 +1,16 @@
-# Passucks v0.0
+Passucks v0.0
+-------------
 
-## Dependencies
-- gpg
+- [gpg](https://www.gnupg.org/download/)
 
-## Features
+Features
+--------
 
-- Stores: name_of_password, password
-- Generation of passwords as random as I could make them.
-- Strong Encryption (AES 256)
-- Recovery Options*
-- Vault*
+- Stores: name of password, password
+- GPG key based
 
-## THINGS TO RESEARCH
+THINGS TO RESEARCH
+------------------
 
 - mlock
-
 
