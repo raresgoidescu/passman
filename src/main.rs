@@ -1,6 +1,8 @@
 mod generator;
 
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf, process::Command};
+
+use rpassword::read_password;
 
 fn print_usage(program: &str) {
     print!(
@@ -58,12 +60,60 @@ fn list_entries(store_path: &PathBuf) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn _add_entry(name: &str, store_path: &PathBuf) -> Result<(), std::io::Error> {
-    let mut path = store_path.clone();
-    path.push(name);
-    path.set_extension("gpg");
+fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
+    // Get the recipient
+    let mut gpg_id_file = store_path.clone();
+    gpg_id_file.push(".gpg-id");
+    let gpg_id = std::fs::read_to_string(gpg_id_file)?;
 
-    Ok(())
+    // Target file
+    let mut output_file = store_path.clone();
+    output_file.push(name);
+    output_file.set_extension("gpg");
+
+    print!("Enter the password: ");
+    let _ = std::io::stdout().flush();
+    let password1 = read_password()?;
+    print!("Re-enter the password: ");
+    let _ = std::io::stdout().flush();
+    let password2 = read_password()?;
+
+    if password1 != password2 {
+        eprintln!("Passwords don't match.");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Passwords don't match",
+        ));
+    }
+
+    drop(password1);
+
+    // Spawn a GPG process that encrypts the stdin and prints in the target file
+    let mut gpg_child_ps = Command::new("gpg")
+        .arg("--encrypt")
+        .arg("--armor")
+        .arg("--recipient")
+        .arg(gpg_id)
+        .arg("--output")
+        .arg(output_file)
+        .stdin(std::process::Stdio::piped()) // equiv: ./passucks | gpg ...
+        .spawn()?;
+
+    // GPG process is created now it waits for input
+    // So we take ownership of the process and pipe in the password
+    if let Some(mut stdin) = gpg_child_ps.stdin.take() {
+        stdin.write_all(password2.as_bytes())?;
+    }
+
+    // We wait (sync) till GPG outputs everything
+    let out = gpg_child_ps.wait_with_output()?;
+
+    if out.status.success() {
+        println!("Pass stored!");
+        return Ok(());
+    } else {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "GPG Failed"));
+    }
 }
 
 fn get_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
@@ -81,7 +131,8 @@ fn get_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
         if entry.path().is_file() {
             if let Some(current_name) = entry.path().file_stem() {
                 if current_name == name {
-                    println!("{}", current_name.to_string_lossy());
+                    println!("Found {}", current_name.to_string_lossy());
+                    // open > decrypt > show / copy to clipboard
                     found_entry = true;
                     break;
                 }
@@ -153,6 +204,16 @@ fn main() -> Result<(), std::io::Error> {
                 }
                 "get" => {
                     let _ = get_entry(&store_path, &args[2]);
+                }
+                "add" => {
+                    if !store_path.exists() {
+                        eprintln!(
+                            "There is no store in the current directory.\
+                            Use -h or --help"
+                        );
+                    } else {
+                        let _ = add_entry(&store_path, &args[2]);
+                    }
                 }
                 _ => {
                     eprintln!("Unknown command. Use -h or --help.");
