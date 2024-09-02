@@ -2,14 +2,9 @@ mod generator;
 
 use std::env;
 use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
 
-use openpgp::parse::Parse;
-use openpgp::Cert;
-use sequoia_openpgp as openpgp;
-
-fn print_usage() {
+fn print_usage(program: &str) {
     print!(
         "Usage:\n\
             \t./{} [command]\n\
@@ -22,23 +17,8 @@ fn print_usage() {
             \tdelete [pass-name]        Delete a password\n\
             Flags:\n\
             \t-h, --help                Guess.. Go ahead, guess\n",
-        env!("CARGO_PKG_NAME")
+        program
     );
-}
-
-fn _load_pub_key(file_path: &str) -> Result<Cert, std::io::Error> {
-    let mut file = File::open(file_path)?;
-    let mut key_data = Vec::new();
-
-    file.read_to_end(&mut key_data)?;
-
-    match Cert::from_bytes(&key_data) {
-        Ok(cert) => Ok(cert),
-        Err(err) => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            err.to_string(),
-        )),
-    }
 }
 
 fn _init_store(_path: &PathBuf) -> Result<(), std::io::Error> {
@@ -46,10 +26,10 @@ fn _init_store(_path: &PathBuf) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn _get_entries(_path: &PathBuf) -> Result<Vec<String>, std::io::Error> {
+fn _get_entries(path: &PathBuf) -> Result<Vec<String>, std::io::Error> {
     let mut entries = Vec::new();
 
-    for entry in std::fs::read_dir(_path)? {
+    for entry in std::fs::read_dir(path)? {
         let entry = entry?;
         if entry.path().is_file() {
             if let Some(name) = entry.path().file_stem() {
@@ -61,14 +41,12 @@ fn _get_entries(_path: &PathBuf) -> Result<Vec<String>, std::io::Error> {
     Ok(entries)
 }
 
-fn _add_entry(name: &str, cert: &Cert, path: &PathBuf) -> Result<(), std::io::Error> {
+fn _add_entry(name: &str, path: &PathBuf) -> Result<(), std::io::Error> {
     let mut path = path.clone();
     path.push(name);
     path.set_extension("gpg");
 
     let mut file = File::create(&path)?;
-
-    let data = "pass";
 
     Ok(())
 }
@@ -77,7 +55,15 @@ fn _get_entry(_name: &str) {}
 
 fn _update_entry(_name: &str) {}
 
-fn _delete_entry(_name: &str) {}
+fn _delete_entry(path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
+    let mut path = path.clone();
+    path.push(name);
+    path.set_extension("gpg");
+
+    std::fs::remove_file(path)?;
+
+    Ok(())
+}
 
 fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = std::env::args().collect();
@@ -95,9 +81,12 @@ fn main() -> Result<(), std::io::Error> {
         2 => {
             let command = args[1].as_str();
             match command {
-                "-h" | "--help" => print_usage(),
+                "-h" | "--help" => print_usage(&args[0]),
                 _ => {
-                    eprintln!("Unknown command or invalid number of arguments. Use -h or --help to print usage.");
+                    eprintln!(
+                        "Unknown command or invalid number of arguments.\
+                        Use -h or --help."
+                    );
                 }
             }
         }
@@ -105,12 +94,12 @@ fn main() -> Result<(), std::io::Error> {
             let command = args[1].as_str();
             match command {
                 _ => {
-                    eprintln!("Unknown command. Use -h or --help to print usage.");
+                    eprintln!("Unknown command. Use -h or --help.");
                 }
             }
         }
         _ => {
-            eprintln!("Invalid number of arguments. Use -h or --help to print usage.");
+            eprintln!("Invalid number of arguments. Use -h or --help.");
         }
     }
 
