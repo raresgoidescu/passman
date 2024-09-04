@@ -21,7 +21,7 @@ fn print_usage(program: &str) {
 }
 
 // Is there smth like Doxygen for rust?
-fn init_store(store_path: &PathBuf, id: &str) -> Result<(), std::io::Error> {
+fn init_store(store_path: &PathBuf, id: &str) -> std::io::Result<()> {
     // Create the directory if it doesn't exist
     std::fs::create_dir_all(&store_path)?;
 
@@ -38,7 +38,7 @@ fn init_store(store_path: &PathBuf, id: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn list_entries(store_path: &PathBuf) -> Result<(), std::io::Error> {
+fn list_entries(store_path: &PathBuf) -> std::io::Result<()> {
     // Verify existance of a store in the current directory
     if !store_path.exists() || !store_path.is_dir() {
         eprintln!("Couldn't find a store in the home directory.");
@@ -63,7 +63,7 @@ fn list_entries(store_path: &PathBuf) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn get_input(prompt: &str) -> Result<String, std::io::Error> {
+fn get_input(prompt: &str) -> std::io::Result<String> {
     let mut input = String::new();
     print!("{}", prompt);
     std::io::stdout().flush()?;
@@ -71,7 +71,38 @@ fn get_input(prompt: &str) -> Result<String, std::io::Error> {
     Ok(input.trim().to_string())
 }
 
-fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
+fn pass_prompt() -> std::io::Result<String> {
+    let random = get_input("Generate a random password? [y/n] ")?
+        .trim()
+        .to_lowercase()
+        == "y";
+
+    if !random {
+        loop {
+            print!("Enter the password: ");
+            std::io::stdout().flush()?;
+            let password = rpassword::read_password()?;
+            print!("Re-enter the password: ");
+            std::io::stdout().flush()?;
+            let password_again = rpassword::read_password()?;
+            if password != password_again {
+                eprintln!("Passwords don't match.");
+            } else {
+                return Ok(password_again);
+            }
+        }
+    } else {
+        let len: usize = get_input("Choose a length: ")?.parse().unwrap_or(25);
+        let special = get_input("Include special characters? [y/n] ")?
+            .trim()
+            .to_lowercase()
+            == "y";
+
+        return Ok(generate_password(len, special));
+    };
+}
+
+fn add_entry(store_path: &PathBuf, name: &str) -> std::io::Result<()> {
     // Get the recipient
     let gpg_id_file = store_path.join(".gpg-id");
     let gpg_id = std::fs::read_to_string(&gpg_id_file)?.trim().to_string();
@@ -88,34 +119,7 @@ fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
         ));
     }
 
-    let random = get_input("Generate a random password? [y/n] ")?
-        .trim()
-        .to_lowercase()
-        == "y";
-
-    let password = if !random {
-        loop {
-            print!("Enter the password: ");
-            std::io::stdout().flush()?;
-            let password = rpassword::read_password()?;
-            print!("Re-enter the password: ");
-            std::io::stdout().flush()?;
-            let password_again = rpassword::read_password()?;
-            if password != password_again {
-                eprintln!("Passwords don't match.");
-            } else {
-                break password_again;
-            }
-        }
-    } else {
-        let len: usize = get_input("Choose a length: ")?.parse().unwrap_or(25);
-        let special = get_input("Include special characters? [y/n] ")?
-            .trim()
-            .to_lowercase()
-            == "y";
-
-        generate_password(len, special)
-    };
+    let password = pass_prompt()?;
 
     // Spawn a GPG process that encrypts the stdin and prints in the target file
     let mut gpg_child_ps = Command::new("gpg")
@@ -147,7 +151,7 @@ fn add_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
     }
 }
 
-fn get_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
+fn get_entry(store_path: &PathBuf, name: &str) -> std::io::Result<()> {
     let mut target_entry = store_path.join(name);
     target_entry.set_extension("gpg");
 
@@ -174,9 +178,12 @@ fn get_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
     }
 }
 
-fn _update_entry(_name: &str) {}
+// TODO:
+fn _update_entry(_name: &str) -> std::io::Result<()> {
+    Ok(())
+}
 
-fn delete_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> {
+fn delete_entry(store_path: &PathBuf, name: &str) -> std::io::Result<()> {
     let mut path = store_path.join(name);
     path.set_extension("gpg");
 
@@ -187,6 +194,7 @@ fn delete_entry(store_path: &PathBuf, name: &str) -> Result<(), std::io::Error> 
 
 fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = std::env::args().collect();
+    let program = &args[0];
 
     let curr_dir: PathBuf = match dirs::home_dir() {
         Some(dir) => dir,
@@ -196,63 +204,49 @@ fn main() -> Result<(), std::io::Error> {
         }
     };
 
-    let mut store_path = curr_dir.clone();
-    store_path.push(".my-password-store");
+    let store_path = curr_dir.join(".my-password-store");
 
-    match args.len() {
-        1 => match list_entries(&store_path) {
-            Ok(()) => {}
-            Err(_) => {
-                eprintln!("Couldn't access the store. Check permisions");
-            }
-        },
-        2 => {
-            let command = args[1].as_str();
-            match command {
-                "-h" | "--help" => print_usage(&args[0]),
-                "list" => list_entries(&store_path)?,
-                _ => {
-                    eprintln!(
-                        "Unknown command or invalid number of arguments.\
-                        Use -h or --help."
-                    );
-                }
+    if args.len() == 1 {
+        let _ = list_entries(&store_path);
+        std::process::exit(0);
+    }
+
+    match args.get(1).map(|s| s.as_str()) {
+        Some("-h") | Some("--help") => print_usage(program),
+        Some("init") => {
+            if args.len() == 3 {
+                let _ = init_store(&store_path, &args[2]);
+            } else {
+                eprintln!("Usage: {} init <gpg-id>", program);
             }
         }
-        3 => {
-            let command = args[1].as_str();
-            match command {
-                "init" => {
-                    let _ = init_store(&store_path, &args[2]);
-                }
-                "delete" => {
-                    let _ = delete_entry(&store_path, &args[2]);
-                }
-                "get" => {
-                    if !store_path.exists() {
-                        eprintln!("There is no store. Use -h or --help");
-                    } else {
-                        // don't know what to do with this
-                        let _res = match get_entry(&store_path, &args[2]) {
-                            Ok(()) => "gg".to_string(),
-                            Err(err) => err.to_string(),
-                        };
-                    }
-                }
-                "add" => {
-                    if !store_path.exists() {
-                        eprintln!("There is no store. Use -h or --help");
-                    } else {
-                        let _ = add_entry(&store_path, &args[2]);
-                    }
-                }
-                _ => {
-                    eprintln!("Unknown command. Use -h or --help.");
-                }
+        Some("list") => {
+            let _ = list_entries(&store_path);
+        }
+        Some("add") => {
+            if args.len() == 3 {
+                let _ = add_entry(&store_path, &args[2]);
+            } else {
+                eprintln!("Usage: {} add <pass-name>", program);
+            }
+        }
+        Some("get") => {
+            if args.len() == 3 {
+                let _ = get_entry(&store_path, &args[2]);
+            } else {
+                eprintln!("Usage: {} get <pass-name>", program);
+            }
+        }
+        Some("delete") => {
+            if args.len() == 3 {
+                let _ = delete_entry(&store_path, &args[2]);
+            } else {
+                eprintln!("Usage: {} delete <pass-name>", program);
             }
         }
         _ => {
-            eprintln!("Invalid number of arguments. Use -h or --help.");
+            eprintln!("Unknown command. Use -h or --help.");
+            std::process::exit(1);
         }
     }
 
