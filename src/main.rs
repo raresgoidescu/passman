@@ -6,16 +6,17 @@ use std::{io::Write, path::PathBuf, process::Command};
 fn print_usage(program: &str) {
     println!(
         "Usage:\n\
-            \t./{} [command]\n\
+            \t{} [command]\n\
             Commands:\n\
-            \tinit [gpg_id]             Add the GPG id\n\
+            \tinit [gpg_id]             Init a store using an existing GPG id\n\
             \tlist                      List all entries in the store\n\
             \tadd | insert [pass-name]  Add a new entry\n\
-            \tget [pass-name]           Prints password\n\
+            \tget [pass-name]           Prints password in clear text\n\
             \tupdate [pass-name]        Update a password\n\
             \tdelete [pass-name]        Delete a password\n\
             Flags:\n\
-            \t-h, --help                Guess.. Go ahead, guess",
+            \t-h, --help                Guess.. Go ahead, guess\n\
+            \t-c, --clip                Paired with add|get, stores the password in the clipboard",
         program
     );
 }
@@ -223,7 +224,7 @@ fn main() -> Result<(), std::io::Error> {
         Some("list") => {
             let _ = list_entries(&store_path);
         }
-        Some("add") => {
+        Some("add") | Some("insert") => {
             if args.len() == 3 {
                 let _ = add_entry(&store_path, &args[2]);
             } else {
