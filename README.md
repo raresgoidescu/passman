@@ -1,24 +1,19 @@
 Passucks v0.0
 -------------
 
+This is a simple password manager written in rust.
+
+Strongly inspired by [pass](https://www.passwordstore.org/).
+
+Dependencies
+------------
+
 - [gpg](https://www.gnupg.org/download/)
-
-Features
---------
-
-- Stores: name of password, password
-- GPG key based
-
-THINGS TO RESEARCH
-------------------
-
-- mlock
 
 TODO
 ----
 
 - add clipboard features
-- add option for random generated passwords
 - add support for multiple recipients
-- 
+- refactor `main`
 
